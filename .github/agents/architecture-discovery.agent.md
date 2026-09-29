@@ -15,6 +15,7 @@ Discover and document the complete repository architecture.
 - Identify test strategy
 - Identify design constraints
 - Identify extension points for future features
+- Identify lineage and traceability requirements
 
 ## Rules
 

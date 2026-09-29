@@ -2027,6 +2027,7 @@ def render_html(report: Report, manifest: dict[str, Any]) -> str:
     critical = int(report.summary_value("exceptions_critical", "0") or 0)
     high = int(report.summary_value("exceptions_high", "0") or 0)
     days_to_audit = report.summary_value("days_to_audit", "")
+    datasets_loaded = sum(1 for entry in manifest["inputs"] if entry["status"] == "LOADED")
 
     parts: list[str] = [
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">",
@@ -2039,7 +2040,8 @@ def render_html(report: Report, manifest: dict[str, Any]) -> str:
         f'<span class="pill">{_esc(TOOL_NAME)} v{_esc(TOOL_VERSION)}</span> '
         f'<span class="pill">no credit decisions</span> '
         f'<span class="pill">payload '
-        f'{_esc(manifest["determinism"]["deterministic_payload_sha256"][:12])}&#8230;</span>'
+        f'{_esc(manifest["determinism"]["deterministic_payload_sha256"][:12])}&#8230;</span> '
+        f'<span class="pill">{datasets_loaded} datasets loaded</span>'
         + (f' <span class="pill">{_esc(days_to_audit)} days to audit</span>'
            if days_to_audit else "") + "</p>",
     ]

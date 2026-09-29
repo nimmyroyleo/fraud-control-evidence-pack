@@ -928,6 +928,39 @@ class TestOutputs:
         assert "R999" in pack                        # the critical finding is visible
         assert "Scope &amp; limitations" in pack
 
+    def test_html_header_shows_datasets_loaded_count_matching_manifest(self,
+                                                                       report: fcv.Report):
+        manifest = json.loads((report.params.run_dir() / "manifest.json").read_text("utf-8"))
+        loaded_count = sum(1 for entry in manifest["inputs"] if entry["status"] == "LOADED")
+        assert loaded_count == 9  # 3 static + 4 period extracts + labels + 1 baseline cohort
+        pack = (report.params.run_dir() / "evidence_pack.html").read_text("utf-8")
+        assert f"{loaded_count} datasets loaded" in pack
+
+    def test_datasets_loaded_count_is_derived_not_hardcoded(self, params: fcv.RunParams):
+        """Adding an extra loadable cohort must change the rendered count, proving it is
+        computed from the manifest rather than a fixed literal."""
+        baseline = fcv.run(params)
+        baseline_pack = (baseline.params.run_dir() / "evidence_pack.html").read_text("utf-8")
+        assert "9 datasets loaded" in baseline_pack
+
+        # 2026-06 is an optional baseline cohort that the tiny_dataset fixture never
+        # writes (see test_manifest_records_missing_optional_cohorts); adding it flips
+        # that entry from MISSING to LOADED.
+        _write(
+            params.input_dir / "loans_2026-06.csv",
+            ["loan_id", "application_id", "customer_id", "disbursal_date",
+             "principal_amount", "product_code", "origination_channel", "loan_status"],
+            [["L7", "APP7", "C7", "2026-06-02", "1000.00", "PL_SMALL_12M", "MOBILE_APP",
+              "DISBURSED"]],
+        )
+        richer = fcv.run(fcv.RunParams(
+            period=params.period, as_of=params.as_of, input_dir=params.input_dir,
+            output_dir=params.output_dir.parent / "richer", audit_date=params.audit_date,
+        ))
+        richer_pack = (richer.params.run_dir() / "evidence_pack.html").read_text("utf-8")
+        assert "10 datasets loaded" in richer_pack
+        assert "9 datasets loaded" not in richer_pack
+
     def test_html_escapes_source_text(self, params: fcv.RunParams):
         registry = params.input_dir / "rule_registry.csv"
         registry.write_text(

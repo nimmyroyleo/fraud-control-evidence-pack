@@ -1,0 +1,25 @@
+control_id,control_title,control_family,regulatory_reference,evidence_requirement
+AC-01,Applicant identity is verified before disbursal,Identity Verification,FCRA 615(e) / 16 CFR 681.1 Red Flags Rule,Rule fire log + review disposition sample
+AC-02,Synthetic identity indicators are detected and dispositioned,Identity Verification,NIST SP 800-63A IAL2,Rule fire log + confirmed-fraud linkage
+AC-03,Government ID documents are checked for tampering,Identity Verification,16 CFR 681.1 Appendix A II(a),Rule fire log + document review evidence
+AC-04,PII mismatches against bureau data are investigated,Identity Verification,FCRA 611,Rule fire log + reviewer notes
+AC-05,Device and session anomalies are monitored,Transaction Monitoring,FFIEC Authentication & Access Guidance (2021),Rule fire log
+AC-06,Application velocity is monitored across identity attributes,Transaction Monitoring,FFIEC BSA/AML Manual - Suspicious Activity Monitoring,Rule fire log + alert volume
+AC-07,Automated / bot application traffic is detected,Transaction Monitoring,FFIEC Authentication & Access Guidance (2021),Rule fire log
+AC-08,Account takeover attempts are detected and escalated,Transaction Monitoring,GLBA Safeguards Rule 16 CFR 314.4(c),Rule fire log + escalation evidence
+AC-09,Mule / third-party disbursal accounts are screened,Transaction Monitoring,31 CFR 1020.320,Rule fire log + review disposition
+AC-10,Geolocation inconsistencies are evaluated,Transaction Monitoring,FFIEC BSA/AML Manual - Customer Due Diligence,Rule fire log
+AC-11,Stated income misrepresentation is tested,Underwriting Integrity,12 CFR 1026.43(c)(2) - ability to repay verification,Rule fire log + verification evidence
+AC-12,First-party fraud patterns are monitored post-disbursal,Underwriting Integrity,Interagency Guidance on Credit Risk Review,Confirmed-fraud label file
+AC-13,Every fraud alert is dispositioned by a trained reviewer,Case Management,FFIEC BSA/AML Manual - Suspicious Activity Reporting,Review outcome file + reviewer roster
+AC-14,Alert dispositions are recorded with a reason code,Case Management,SOX ITGC - completeness of records,Review outcome file
+AC-15,Review queue ageing is monitored,Case Management,FFIEC BSA/AML Manual - Alert Management,Alert file + review timestamps
+AC-16,Reviewer decisions are subject to quality assurance sampling,Case Management,OCC Bulletin 2011-12 - independent review,QA sample + reviewer distribution
+AC-17,Confirmed fraud is escalated for SAR consideration,Reporting & Escalation,31 CFR 1020.320,Confirmed-fraud label file + SAR log
+AC-18,Fraud losses are reported to the risk committee monthly,Reporting & Escalation,Interagency Guidance on Model Risk Management (SR 11-7),Fraud loss baseline
+AC-19,Active rule inventory is complete and owned,Rule Governance,SR 11-7 Section V - model inventory,Rule registry
+AC-20,Rule changes follow documented change control,Rule Governance,SOX ITGC - change management,Rule registry versions + fire log
+AC-21,Rule performance is reviewed at least annually,Rule Governance,SR 11-7 Section VI - ongoing monitoring,Rule registry review dates + precision metrics
+AC-22,Retired rules are removed from the production decision path,Rule Governance,SOX ITGC - change management,Rule registry + fire log reconciliation
+AC-23,Source data feeding fraud controls is reconciled,Data Integrity,SOX ITGC - data integrity,Manifest row counts + hashes
+AC-24,Fraud metrics are reproducible for an examiner,Data Integrity,SR 11-7 Section VII - documentation,Run manifest + metric lineage

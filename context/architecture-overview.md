@@ -44,3 +44,7 @@ Validates report generation and application behavior.
 - Python
 - PyTest
 - HTML Report Generation
+
+## Lineage
+ 
+Each metric can be traced back to source datasets used in report generation.

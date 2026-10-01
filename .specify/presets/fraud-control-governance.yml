@@ -1,0 +1,37 @@
+name: fraud-control-governance
+version: 1.0.0
+description: Enforces governance and lineage discipline for fraud-control-evidence-pack features
+category: governance
+effect: read-write
+
+# Override the core spec-template.md to require governance sections
+templates:
+  spec-template.md:
+    strategy: wrap
+    prepend: |
+      ## Governance & Lineage *(fraud-control governance required)*
+
+      This section MUST be completed before specification approval.
+
+      ### Principles Compliance
+
+      - **Principle I (Read-Only)**: This feature does/does not modify source inputs. [REQUIRED: Justify]
+      - **Principle II (Traceable)**: Every output column traces to a source file. [REQUIRED: Document lineage]
+      - **Principle III (Idempotent)**: Deterministic output; no wall-clock values. [REQUIRED: Confirm]
+      - **Principle IV (Provisional Metrics)**: Handles labelling lag appropriately. [REQUIRED: Address if applicable]
+      - **Principle V (Stdlib-Only)**: No third-party runtime imports. [REQUIRED: Confirm]
+
+      ### Source Files & Lineage
+
+      Documents which source extracts (rule_registry.csv, audit_checklist.csv, etc.) this feature depends on:
+
+      - **Input 1**: [Name] — [Purpose]
+      - **Input 2**: [Name] — [Purpose]
+      - **Output 1**: [Name] — [Maps to which principle?]
+
+      Lineage will be verified in metric_lineage.csv per the output contract.
+
+    wrap: "{CORE_TEMPLATE}"
+
+presets: []
+extensions: []

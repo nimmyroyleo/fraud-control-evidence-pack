@@ -1,0 +1,18 @@
+name: lineage-check
+version: 1.0.0
+description: Validates that spec output columns are declared in metric_lineage.csv (read-only governance gate)
+category: validation
+effect: read-only
+
+commands:
+  lineage-check:
+    description: Validates that all output columns declared in a spec have lineage declarations
+    entrypoint: validate_spec_lineage.py
+    args:
+      - name: spec_file
+        type: file
+        description: Path to spec.md to validate
+        default: "specs/*/spec.md"
+    output: Report of missing/extra lineage entries
+
+extensions: []

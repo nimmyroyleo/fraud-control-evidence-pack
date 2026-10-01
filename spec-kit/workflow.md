@@ -1,5 +1,10 @@
 # Final Workflow: Fraud Control Evidence Pack
 
+> **SUPERSEDED (historical).** This document proposed a *Hybrid* workflow that avoided the
+> Spec-Kit CLI. The team later decided to adopt the Spec-Kit CLI; the workflow actually
+> executed is recorded in [workflow-spec-kit-cli.md](workflow-spec-kit-cli.md). This file
+> is kept as the "before" side of the Activity 2 comparison.
+
 ## Purpose
 
 This workflow is based on the conclusions documented in:

@@ -55,6 +55,10 @@ All findings were verified against repository evidence:
 
 ## 5. Final Recommendation
 
+> **SUPERSEDED.** This Hybrid recommendation was overtaken by the team's decision to adopt
+> the Spec-Kit CLI directly. The workflow actually executed is recorded in
+> [workflow-spec-kit-cli.md](workflow-spec-kit-cli.md); see Section 7 for the outcome.
+
 **Adopt the Hybrid workflow** defined in [workflow.md](spec-kit/workflow.md):
 
 1. Architecture Discovery runs on drift only (Gate 0), not per feature.
@@ -86,3 +90,34 @@ Spec-Kit CLI if the project later spans multiple repos or teams.
 - **Fact/recommendation separation** — the same discipline the evidence pack applies to
   its metrics (verified vs. provisional) proved equally valuable when evaluating
   process tooling.
+
+## 7. Actual Outcome: Spec-Kit CLI Adoption
+
+The Hybrid recommendation (Sections 4-5) was **not** the path taken. The team decided to
+**adopt the Spec-Kit CLI** and build a new, more complex feature through it, so the
+comparison is now backed by a real implementation rather than analysis alone.
+
+**What was done (facts, committed to Git):**
+
+- Installed the Spec-Kit CLI (`specify` v1.0.13) and initialized it in-repo
+  (`specify init --here --force --integration copilot --script py`).
+- Ran the full SDD pipeline for the **Control Coverage Trend** feature
+  ([../specs/001-control-coverage-trend/](../specs/001-control-coverage-trend/)):
+  constitution -> specify -> plan -> tasks -> analyze -> implement -> converge.
+- Shipped the feature in [../fraud_control_view.py](../fraud_control_view.py) with new
+  tests in [../test_fraud_control_view.py](../test_fraud_control_view.py); the full pytest
+  suite passes.
+- Recorded the executed workflow in [workflow-spec-kit-cli.md](workflow-spec-kit-cli.md).
+
+**What this validated (works / does not):**
+
+- **Works**: the enforced template structure, the constitution as a plan/analyze-time
+  gate, and the clean spec->code commit trail fit an audit-evidence project well; the
+  `analyze` and `converge` gates added real cross-artifact checking.
+- **Friction**: environment setup needed `--system-certs` for corporate TLS and
+  `--script py` to avoid an unreliable interactive menu; the full pipeline is heavier than
+  a one-line change would warrant.
+- **Confirmed gap**: Spec-Kit has **no equivalent** to the custom Architecture Discovery
+  agent (brownfield context generation), which is therefore kept as a periodic pre-step.
+- **Constraint preserved**: the CLI, `uv`, and `pytest` are dev/process tooling only, so
+  the shipped tool's stdlib-only runtime guarantee (Constitution Principle V) still holds.

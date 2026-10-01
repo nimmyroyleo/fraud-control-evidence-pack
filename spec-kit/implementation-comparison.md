@@ -1,5 +1,12 @@
 # Implementation Comparison: Agent-Based vs. Spec-Kit vs. Hybrid
 
+> **UPDATE (supersedes the recommendation at the end).** Since this comparison was written,
+> the team **adopted the Spec-Kit CLI** and built the Control Coverage Trend feature through
+> it, so a `.specify/` directory now exists. The analysis below is retained, but the final
+> decision is **full Spec-Kit CLI adoption**, not the Hybrid recommended at the bottom — see
+> [workflow-spec-kit-cli.md](workflow-spec-kit-cli.md) and Section 7 of
+> [activity2-summary.md](activity2-summary.md).
+
 Scope: this repository only. No `.specify/` directory exists and the Spec Kit CLI
 (`specify`) is not installed here (Fact). Everything under "Spec-Kit-Based Workflow"
 below describes what adopting it *would* look like, based on public Spec Kit

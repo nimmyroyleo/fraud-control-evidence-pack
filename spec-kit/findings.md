@@ -1,5 +1,12 @@
 # Findings: Evaluating the Three Agents
 
+> **UPDATE.** These findings were validated by the actual Spec-Kit CLI run (see
+> [workflow-spec-kit-cli.md](workflow-spec-kit-cli.md)): the Developer and Spec-Enrichment
+> agents map onto `/speckit-implement` and `/speckit-specify`, while the Architecture
+> Discovery agent has **no Spec-Kit equivalent** and is retained. A `.specify/` directory
+> now exists, so the "no Spec-Kit footprint / no CI" facts below describe the pre-adoption
+> baseline.
+
 Builds on [concepts.md](spec-kit/concepts.md) and
 [implementation-comparison.md](spec-kit/implementation-comparison.md). Facts below are
 verified against this repository's files; everything else is marked as a recommendation.

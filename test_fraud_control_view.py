@@ -1120,6 +1120,15 @@ class TestControlCoverageTrend:
         logical = {entry["logical_name"] for entry in manifest["compare_inputs"]}
         assert {"rule_fires", "alerts", "review_outcomes", "loans"} <= logical
 
+    def test_compare_run_leaves_all_inputs_byte_identical(self, params: fcv.RunParams):
+        before = hash_tree(params.input_dir)
+        compared = fcv.RunParams(period=params.period, as_of=params.as_of,
+                                 input_dir=params.input_dir, output_dir=params.output_dir,
+                                 audit_date=params.audit_date, compare_period="2026-05")
+        report = fcv.run(compared)
+        assert report.compare_usable is True
+        assert hash_tree(params.input_dir) == before  # compare-period inputs untouched
+
 
 # ======================================================================================
 # Full-scale smoke test (opt-in: requires the generated 30k-loan month)

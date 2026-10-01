@@ -402,7 +402,7 @@ class TestIdempotency:
         right = {name: digest for name, digest in hash_tree(second.run_dir()).items()
                  if name != "manifest.json"}
         assert left == right
-        assert len(left) == 8  # 7 CSVs + the HTML pack
+        assert len(left) == 9  # 8 CSVs + the HTML pack
 
     def test_rerunning_in_place_does_not_change_the_payload_digest(self,
                                                                    params: fcv.RunParams):
@@ -1012,6 +1012,122 @@ class TestOutputs:
 
     def test_days_to_audit_is_derived_from_the_as_of_date(self, report: fcv.Report):
         assert report.summary_value("days_to_audit") == "43"  # 2026-09-15 -> 2026-10-28
+
+
+# ======================================================================================
+# Feature: control coverage trend (--compare-period)
+# ======================================================================================
+
+
+def _write_compare_period_may(data_dir: Path) -> None:
+    """Write full 2026-05 extracts so its coverage differs from 2026-08.
+
+    2026-05 fires R002 (AC-02) and R003 (AC-03); 2026-08 fires R001 (AC-01),
+    R002 (AC-02) and R006 (AC-05). So AC-01/AC-05 are NEWLY_EVIDENCED, AC-03 REGRESSED,
+    AC-02 STILL_EVIDENCED, AC-04/AC-06 STILL_UNEVIDENCED.
+    """
+    _write(
+        data_dir / "rule_fires_2026-05.csv",
+        ["fire_id", "application_id", "rule_id", "fired_at"],
+        [
+            ["F-05-1", "APP-05-1", "R002", "2026-05-10T09:00:00"],
+            ["F-05-2", "APP-05-2", "R003", "2026-05-11T09:00:00"],
+        ],
+    )
+    _write(
+        data_dir / "alerts_2026-05.csv",
+        ["alert_id", "application_id", "rule_id", "created_at", "assigned_reviewer_id"],
+        [],
+    )
+    _write(
+        data_dir / "review_outcomes_2026-05.csv",
+        ["review_id", "alert_id", "reviewer_id", "decided_at", "outcome"],
+        [],
+    )
+
+
+class TestControlCoverageTrend:
+    def test_no_compare_period_writes_header_only_and_notes_it(self, params: fcv.RunParams):
+        report = fcv.run(params)
+        assert report.compare_usable is False
+        assert report.trend_rows == []
+        assert read_csv_rows(report.params.run_dir() / "control_coverage_trend.csv") == []
+        pack = (report.params.run_dir() / "evidence_pack.html").read_text("utf-8")
+        assert "Control coverage trend" in pack
+        assert "--compare-period" in pack
+
+    def test_unusable_compare_period_degrades_without_failing(self, params: fcv.RunParams):
+        # 2026-01 has no extracts at all, so the comparison cannot be computed.
+        bad = fcv.RunParams(period=params.period, as_of=params.as_of,
+                            input_dir=params.input_dir, output_dir=params.output_dir,
+                            audit_date=params.audit_date, compare_period="2026-01")
+        report = fcv.run(bad)
+        assert report.compare_usable is False
+        assert report.compare_note
+        assert read_csv_rows(report.params.run_dir() / "control_coverage_trend.csv") == []
+
+    def test_self_comparison_is_zero_delta_with_stable_classes(self, params: fcv.RunParams):
+        same = fcv.RunParams(period=params.period, as_of=params.as_of,
+                             input_dir=params.input_dir, output_dir=params.output_dir,
+                             audit_date=params.audit_date, compare_period=params.period)
+        report = fcv.run(same)
+        assert report.compare_usable is True
+        assert report.summary_value("controls_evidenced_pct_prior") == "50.00"
+        assert report.summary_value("controls_evidenced_pct_delta") == "0.00"
+        assert len(report.trend_rows) == 6
+        assert {row.change_class for row in report.trend_rows} <= {
+            fcv.TREND_STILL_EVIDENCED, fcv.TREND_STILL_UNEVIDENCED}
+
+    def test_flip_yields_newly_evidenced_and_regressed(self, params: fcv.RunParams):
+        _write_compare_period_may(params.input_dir)
+        compared = fcv.RunParams(period=params.period, as_of=params.as_of,
+                                 input_dir=params.input_dir, output_dir=params.output_dir,
+                                 audit_date=params.audit_date, compare_period="2026-05")
+        report = fcv.run(compared)
+        assert report.compare_usable is True
+        by_id = {row.control_id: row.change_class for row in report.trend_rows}
+        assert by_id["AC-01"] == fcv.TREND_NEWLY_EVIDENCED
+        assert by_id["AC-03"] == fcv.TREND_REGRESSED
+        assert by_id["AC-02"] == fcv.TREND_STILL_EVIDENCED
+        assert by_id["AC-04"] == fcv.TREND_STILL_UNEVIDENCED
+        # The signed delta reconciles: 50.00 current - 33.33 prior.
+        assert report.summary_value("controls_evidenced_pct_prior") == "33.33"
+        assert report.summary_value("controls_evidenced_pct_delta") == "16.67"
+        # Current-evidenced count reconciles with the existing coverage metric.
+        evidenced_now = sum(1 for row in report.trend_rows
+                            if row.current_status == "EVIDENCED")
+        assert evidenced_now == int(report.summary_value("controls_evidenced"))
+
+    def test_trend_csv_is_deterministic_across_runs(self, params: fcv.RunParams):
+        _write_compare_period_may(params.input_dir)
+        common = dict(period=params.period, as_of=params.as_of,
+                      input_dir=params.input_dir, compare_period="2026-05")
+        first = fcv.run(fcv.RunParams(output_dir=params.output_dir.parent / "t1", **common))
+        second = fcv.run(fcv.RunParams(output_dir=params.output_dir.parent / "t2", **common))
+        name = "control_coverage_trend.csv"
+        assert ((first.params.run_dir() / name).read_bytes()
+                == (second.params.run_dir() / name).read_bytes())
+
+    def test_compare_inputs_are_pinned_in_the_manifest(self, params: fcv.RunParams):
+        _write_compare_period_may(params.input_dir)
+        compared = fcv.RunParams(period=params.period, as_of=params.as_of,
+                                 input_dir=params.input_dir, output_dir=params.output_dir,
+                                 audit_date=params.audit_date, compare_period="2026-05")
+        report = fcv.run(compared)
+        manifest = json.loads(
+            (report.params.run_dir() / "manifest.json").read_text("utf-8"))
+        assert "compare_inputs" in manifest
+        logical = {entry["logical_name"] for entry in manifest["compare_inputs"]}
+        assert {"rule_fires", "alerts", "review_outcomes", "loans"} <= logical
+
+    def test_compare_run_leaves_all_inputs_byte_identical(self, params: fcv.RunParams):
+        before = hash_tree(params.input_dir)
+        compared = fcv.RunParams(period=params.period, as_of=params.as_of,
+                                 input_dir=params.input_dir, output_dir=params.output_dir,
+                                 audit_date=params.audit_date, compare_period="2026-05")
+        report = fcv.run(compared)
+        assert report.compare_usable is True
+        assert hash_tree(params.input_dir) == before  # compare-period inputs untouched
 
 
 # ======================================================================================

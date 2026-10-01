@@ -1,0 +1,157 @@
+# Findings: Evaluating the Three Agents
+
+> **UPDATE.** These findings were validated by the actual Spec-Kit CLI run (see
+> [workflow-spec-kit-cli.md](workflow-spec-kit-cli.md)): the Developer and Spec-Enrichment
+> agents map onto `/speckit-implement` and `/speckit-specify`, while the Architecture
+> Discovery agent has **no Spec-Kit equivalent** and is retained. A `.specify/` directory
+> now exists, so the "no Spec-Kit footprint / no CI" facts below describe the pre-adoption
+> baseline.
+
+Builds on [concepts.md](spec-kit/concepts.md) and
+[implementation-comparison.md](spec-kit/implementation-comparison.md). Facts below are
+verified against this repository's files; everything else is marked as a recommendation.
+
+**Fact**: This repo has no `.github/workflows/` directory — no CI/CD currently runs here.
+
+| Agent | Classification | Why (short) |
+|---|---|---|
+| Architecture Discovery Agent | **Required** (periodic, not per-feature) | No Spec-Kit equivalent; its four required outputs are all present and evidence-based |
+| Spec Enrichment Agent | **Optional** | Defined and partly followed, but its two real outputs show shape drift — not reliably enforced in practice |
+| Developer Agent | **Required** | Only agent whose rules map directly onto the repo's four hard constraints and change-scope discipline |
+
+---
+
+## 1. Architecture Discovery Agent
+
+**Classification: Required** — but only as a one-time/periodic step, not something re-run
+per feature.
+
+### Reasoning
+- **Fact**: [architecture-discovery.agent.md](.github/agents/architecture-discovery.agent.md)
+  declares exactly four required outputs — `architecture-overview.md`, `workflow.md`,
+  `constraints.md`, `testing-strategy.md` — and all four exist in [context/](context) with
+  content that matches the agent's stated responsibilities (purpose, workflow, constraints,
+  test strategy). This is the clearest evidence in the repo that an agent contract was
+  actually followed as written.
+- **Fact**: Spec Kit's closest analog, `/speckit.converge`, assesses a codebase **against
+  spec.md/plan.md/tasks.md that already exist** — it does not reverse-engineer
+  architecture, constraints, or test strategy from a brownfield repo the way this agent
+  does. There is no drop-in replacement for this step if Spec-Kit were adopted (per
+  [implementation-comparison.md](spec-kit/implementation-comparison.md) §2).
+- It is not required **per feature**: once `context/` reflects the repository accurately,
+  new features consume it rather than regenerating it. It should be re-run only when the
+  architecture materially changes (new module, new constraint, new data source) — i.e. on
+  drift, not on every spec.
+
+### Alternatives
+- **Recommendation**: A human solution-architect review, updating `context/` by hand —
+  viable at this repo's size (one module) but loses the "use repository evidence only,
+  distinguish facts from inferences" discipline the agent enforces.
+- **Recommendation**: Static-analysis-generated docs (e.g. dependency graphs, docstring
+  extraction) — would capture structure but not semantic constraints like "read-only" or
+  "provisional metrics," which are business/regulatory facts, not code-derivable ones.
+- **Fact**: Spec Kit's `constitution.md` could hold the *constraints* half of this agent's
+  output, but not the architecture-overview/workflow/testing-strategy half.
+
+### CI/CD Integration Opportunities (Recommendation)
+- A scheduled (e.g. weekly) or push-to-main workflow that re-runs a drift check: does
+  `context/architecture-overview.md`'s component list still match the files actually in
+  the repo root (`generate_sample_data.py`, `fraud_control_view.py`, `data/`, `out/`,
+  `test_fraud_control_view.py`)? A simple stdlib script (consistent with this repo's
+  no-dependency ethos) diffing a hardcoded expected-file list against `os.listdir()` would
+  catch the common case cheaply.
+- A PR check that fails (or just annotates) when source files referenced by line number in
+  specs (e.g. [datasets-loaded-indicator.md](specs/datasets-loaded-indicator.md) cites
+  `fraud_control_view.py#L197`) have shifted enough that the cited line no longer contains
+  the described construct — a lightweight staleness signal for architecture context.
+
+---
+
+## 2. Spec Enrichment Agent
+
+**Classification: Optional** — valuable in principle, not currently reliable in practice.
+
+### Reasoning
+- **Fact**: [spec-enrichment.agent.md](.github/agents/spec-enrichment.agent.md) defines five
+  responsibilities (clarify requirements, generate acceptance criteria, identify impacted
+  files, document constraints, define tests) and both existing specs cover roughly that
+  ground.
+- **Observation**: The two specs under [specs/](specs) have materially different shapes —
+  [datasets-loaded-indicator.md](specs/datasets-loaded-indicator.md) uses numbered
+  `FR-##`/`AC-##`, a `Dependencies` section with exact source-line citations, and an
+  explicit `Constraints` section tied to the four project-wide invariants;
+  [report-generation-summary.md](specs/report-generation-summary.md) uses unnumbered prose
+  under `Requirement`/`Acceptance Criteria`/`Files Impacted`/`Constraints`/`Tests` with no
+  dependency citations. Per your own framing of "manually authored specifications" as a
+  distinct item from "Spec Enrichment Agent," this drift is consistent with specs being
+  written by hand at least some of the time, rather than consistently generated by
+  invoking this agent contract.
+- This makes the agent **optional today**: it describes a good process, but nothing in the
+  repo enforces that it is the process actually used to produce a given spec file. Its
+  value is real but currently aspirational rather than verified.
+
+### Alternatives
+- **Recommendation** (already proposed in
+  [implementation-comparison.md](spec-kit/implementation-comparison.md) §3, Hybrid): a
+  project-local `specs/_template.md` that any spec — human- or agent-authored — must
+  follow, checked mechanically rather than trusted to agent invocation.
+- **Fact**: Spec Kit's `/speckit.specify` + `/speckit.clarify` commands would enforce a
+  single template deterministically, at the cost of the CLI/`.specify/` dependency this
+  repo currently avoids (per [implementation-comparison.md](spec-kit/implementation-comparison.md) §2 drawbacks).
+- **Recommendation**: Plain issue-tracker tickets with a fixed description template —
+  lower ceremony than an agent file, but loses the "identify impacted files" and
+  "document constraints" discipline this agent explicitly requires.
+
+### CI/CD Integration Opportunities (Recommendation)
+- A PR check that lints any new/changed file under `specs/` for required section headers
+  (`## Functional Requirements` or `## Requirement`, `## Acceptance Criteria`,
+  `## Files Impacted`/`Dependencies`, `## Constraints`, `## Tests`) — a small stdlib
+  regex script, not a dependency, that would have caught the shape drift between the two
+  existing specs.
+- A check cross-referencing a spec's "Files Impacted"/"Dependencies" list against the
+  files actually touched in the same PR, flagging additions outside the declared scope for
+  reviewer attention (supports the Developer Agent's "avoid unrelated changes" rule below).
+
+---
+
+## 3. Developer Agent
+
+**Classification: Required.**
+
+### Reasoning
+- **Fact**: [developer.agent.md](.github/agents/developer.agent.md) is the only one of the
+  three agents whose rules — "Follow architecture," "Respect constraints," "Update tests,"
+  "Avoid unrelated changes" — map directly onto the properties the README treats as
+  non-negotiable: read-only processing, no credit decisions, deterministic/idempotent
+  output, and provisional-metrics labeling.
+- **Fact**: Enforcement of those constraints in this repo currently comes from the pytest
+  suite ([test_fraud_control_view.py](test_fraud_control_view.py)), not from the agent
+  contract itself — the agent's instructions are advisory to whichever contributor or
+  coding agent implements a feature. Removing this agent's guidance wouldn't break the
+  tests, but it removes the only explicit, repo-local statement telling an implementer
+  *why* those constraints exist and that unrelated changes are out of scope.
+- Without an equivalent gate, nothing before test execution stops a change from violating
+  "no third-party dependency" or "no credit decisioning" until a human reviewer or the test
+  suite catches it after the fact.
+
+### Alternatives
+- **Recommendation**: A pull-request template restating the same four rules as a
+  checklist, reviewed by a human — lower-ceremony than an agent file, but relies entirely
+  on reviewer diligence rather than being consulted at implementation time.
+- **Fact**: Spec Kit's `/speckit.implement` (optionally paired with `/speckit.analyze`
+  beforehand) plays the equivalent role, with the same CLI/`.specify/` cost noted above.
+- **Recommendation**: Direct human implementation with no explicit agent contract at all —
+  works at this repo's current single-contributor scale, but loses the written, checkable
+  rule set entirely.
+
+### CI/CD Integration Opportunities (Recommendation)
+- Run [test_fraud_control_view.py](test_fraud_control_view.py) automatically on every PR —
+  the single highest-value, lowest-effort addition, since the four hard constraints
+  already have dedicated tests (per the README's constraint sections) but nothing runs
+  them until a human does so locally today.
+- A stdlib-only import-scan step that fails a PR if it introduces a non-stdlib import in
+  [fraud_control_view.py](fraud_control_view.py), directly protecting the "no third-party
+  runtime dependency" claim in [README.md](README.md).
+- A determinism check that runs the tool twice against the same fixture inputs and diffs
+  the non-manifest outputs' SHA-256 digests, automating the "byte-for-byte reproducible"
+  claim instead of relying on it being re-verified manually before each release.

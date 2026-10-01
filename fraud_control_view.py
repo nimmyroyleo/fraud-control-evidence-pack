@@ -64,7 +64,7 @@ import html
 import json
 import sys
 from collections import Counter, defaultdict
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -133,6 +133,7 @@ class RunParams:
     stale_review_days: int = 365      # annual rule review expectation (SR 11-7)
     alert_ageing_sla_days: int = 30   # pending alert older than this is an exception
     audit_date: date | None = None    # optional: drives "days to audit" in the summary
+    compare_period: str | None = None  # optional prior period for the coverage trend
 
     def period_bounds(self) -> tuple[date, date]:
         return period_bounds(self.period)
@@ -153,6 +154,7 @@ class RunParams:
             "stale_review_days": self.stale_review_days,
             "alert_ageing_sla_days": self.alert_ageing_sla_days,
             "audit_date": self.audit_date.isoformat() if self.audit_date else None,
+            "compare_period": self.compare_period,
         }
         return out
 
@@ -395,6 +397,29 @@ class ControlCoverageRow:
     source_files: str
 
 
+TREND_NEWLY_EVIDENCED = "NEWLY_EVIDENCED"
+TREND_REGRESSED = "REGRESSED"
+TREND_STILL_EVIDENCED = "STILL_EVIDENCED"
+TREND_STILL_UNEVIDENCED = "STILL_UNEVIDENCED"
+TREND_NEW_CONTROL = "NEW_CONTROL"      # control seen only in the current period
+TREND_RETIRED_CONTROL = "RETIRED_CONTROL"  # control seen only in the prior period
+
+
+@dataclass
+class ControlTrendRow:
+    """One checklist control's coverage change between two reporting periods."""
+
+    current_period: str
+    prior_period: str
+    control_id: str
+    control_title: str
+    control_family: str
+    prior_status: str
+    current_status: str
+    change_class: str
+    source_files: str
+
+
 @dataclass
 class UnmappedRuleRow:
     """A rule/control mapping gap that an examiner would otherwise find first."""
@@ -545,6 +570,11 @@ class Report:
     loss_rows: list[FraudLossRow]
     summary_rows: list[SummaryRow]
     lineage_rows: list[LineageRow]
+    trend_rows: list[ControlTrendRow] = field(default_factory=list)
+    compare_period: str | None = None
+    compare_evidenced_pct: str | None = None
+    compare_usable: bool = False
+    compare_note: str = ""
 
     def summary(self, metric_id: str) -> SummaryRow | None:
         for row in self.summary_rows:
@@ -1557,6 +1587,24 @@ def build_lineage_rows() -> list[LineageRow]:
     add(cc, "source_files", "manifest.json", "logical_name",
         "Logical source extracts behind the row")
 
+    ct = "control_coverage_trend.csv"
+    add(ct, "current_period", "run_parameter", "--period", "Current reporting month")
+    add(ct, "prior_period", "run_parameter", "--compare-period",
+        "Prior comparison month supplied by --compare-period")
+    add(ct, "control_id", "audit_checklist", "control_id",
+        "One row per checklist control seen in either period")
+    add(ct, "control_title", "audit_checklist", "control_title", "Direct lookup")
+    add(ct, "control_family", "audit_checklist", "control_family", "Direct lookup")
+    add(ct, "prior_status", "audit_checklist|rule_control_map|rule_registry|rule_fires",
+        "evidence_status", "EVIDENCED | NOT_EVIDENCED | ABSENT, derived from the prior period")
+    add(ct, "current_status", "audit_checklist|rule_control_map|rule_registry|rule_fires",
+        "evidence_status", "EVIDENCED | NOT_EVIDENCED | ABSENT, derived from the current period")
+    add(ct, "change_class", "derived", "prior_status, current_status",
+        "NEWLY_EVIDENCED | REGRESSED | STILL_EVIDENCED | STILL_UNEVIDENCED | "
+        "NEW_CONTROL | RETIRED_CONTROL")
+    add(ct, "source_files", "manifest.json", "logical_name",
+        "Logical source extracts behind the row")
+
     um = "unmapped_rules.csv"
     add(um, "period", "run_parameter", "--period", "Reporting month")
     add(um, "rule_id", "rule_registry|rule_fires", "rule_id", "Rules with a mapping gap")
@@ -1638,6 +1686,60 @@ def build_lineage_rows() -> list[LineageRow]:
     return rows
 
 
+def _trend_flag(evidence_status: str) -> str:
+    return "EVIDENCED" if evidence_status == EV_EVIDENCED else "NOT_EVIDENCED"
+
+
+def build_control_trend_rows(current: Report, compare: Report) -> list[ControlTrendRow]:
+    """Classify each checklist control's coverage change between two periods.
+
+    Reuses each period's already-computed ``control_rows`` so the current figure stays
+    identical to the coverage card; output is sorted by control_id for determinism.
+    """
+    current_by_id = {row.control_id: row for row in current.control_rows}
+    prior_by_id = {row.control_id: row for row in compare.control_rows}
+    rows: list[ControlTrendRow] = []
+    for control_id in sorted(set(current_by_id) | set(prior_by_id)):
+        cur = current_by_id.get(control_id)
+        pri = prior_by_id.get(control_id)
+        if cur is not None and pri is not None:
+            current_status = _trend_flag(cur.evidence_status)
+            prior_status = _trend_flag(pri.evidence_status)
+            cur_ev = current_status == "EVIDENCED"
+            pri_ev = prior_status == "EVIDENCED"
+            if cur_ev and pri_ev:
+                change = TREND_STILL_EVIDENCED
+            elif cur_ev:
+                change = TREND_NEWLY_EVIDENCED
+            elif pri_ev:
+                change = TREND_REGRESSED
+            else:
+                change = TREND_STILL_UNEVIDENCED
+            title, family = cur.control_title, cur.control_family
+        elif cur is not None:
+            current_status = _trend_flag(cur.evidence_status)
+            prior_status = "ABSENT"
+            change = TREND_NEW_CONTROL
+            title, family = cur.control_title, cur.control_family
+        else:
+            current_status = "ABSENT"
+            prior_status = _trend_flag(pri.evidence_status)
+            change = TREND_RETIRED_CONTROL
+            title, family = pri.control_title, pri.control_family
+        rows.append(ControlTrendRow(
+            current_period=current.params.period,
+            prior_period=compare.params.period,
+            control_id=control_id,
+            control_title=title,
+            control_family=family,
+            prior_status=prior_status,
+            current_status=current_status,
+            change_class=change,
+            source_files="audit_checklist|rule_control_map|rule_registry|rule_fires",
+        ))
+    return rows
+
+
 # --------------------------------------------------------------------------------------
 # Writers
 # --------------------------------------------------------------------------------------
@@ -1645,6 +1747,7 @@ def build_lineage_rows() -> list[LineageRow]:
 CSV_OUTPUTS: tuple[tuple[str, str], ...] = (
     ("control_view.csv", "rule_rows"),
     ("control_coverage.csv", "control_rows"),
+    ("control_coverage_trend.csv", "trend_rows"),
     ("unmapped_rules.csv", "unmapped_rows"),
     ("integrity_exceptions.csv", "exception_rows"),
     ("fraud_loss_baseline.csv", "loss_rows"),
@@ -1655,6 +1758,7 @@ CSV_OUTPUTS: tuple[tuple[str, str], ...] = (
 ROW_TYPES: dict[str, type] = {
     "rule_rows": RuleControlRow,
     "control_rows": ControlCoverageRow,
+    "trend_rows": ControlTrendRow,
     "unmapped_rows": UnmappedRuleRow,
     "exception_rows": ExceptionRow,
     "loss_rows": FraudLossRow,
@@ -2009,6 +2113,36 @@ def _tile(label: str, value: str, foot: str) -> str:
             f'<div class="foot">{_esc(foot)}</div></div>')
 
 
+def _control_trend_card(report: Report) -> str:
+    """Render the control-coverage-trend card, or a notice when no trend is available."""
+    parts = ['<div class="card">', "<h3>Control coverage trend</h3>"]
+    if not report.compare_usable:
+        note = report.compare_note or ("No comparison period was specified "
+                                       "(--compare-period); the coverage trend is not shown.")
+        parts.append(f"<p>{_esc(note)}</p></div>")
+        return "".join(parts)
+    prior = report.compare_evidenced_pct or "0"
+    current = report.summary_value("controls_evidenced_pct", "0")
+    delta = to_float(current) - to_float(prior)
+    sign = "+" if delta >= 0 else ""
+    parts.append(
+        f"<p>Checklist control coverage {_esc(report.compare_period)} &#8594; "
+        f"{_esc(report.params.period)}: <strong>{_esc(prior)}%</strong> &#8594; "
+        f"<strong>{_esc(current)}%</strong> "
+        f"(<strong>{sign}{delta:.2f}</strong> pts)</p>"
+    )
+    counts: dict[str, int] = {}
+    for row in report.trend_rows:
+        counts[row.change_class] = counts.get(row.change_class, 0) + 1
+    order = (TREND_NEWLY_EVIDENCED, TREND_REGRESSED, TREND_STILL_EVIDENCED,
+             TREND_STILL_UNEVIDENCED, TREND_NEW_CONTROL, TREND_RETIRED_CONTROL)
+    items = "".join(
+        f"<li>{_esc(name.replace('_', ' ').title())}: {counts[name]}</li>"
+        for name in order if counts.get(name))
+    parts.append(f"<ul>{items}</ul></div>")
+    return "".join(parts)
+
+
 def render_html(report: Report, manifest: dict[str, Any]) -> str:
     """Render the single-file evidence pack.
 
@@ -2102,6 +2236,8 @@ def render_html(report: Report, manifest: dict[str, Any]) -> str:
         f'evidenced separately.</p>'
     )
     parts.append("</div>")
+
+    parts.append(_control_trend_card(report))
 
     # ---- charts
     parts.append("<h2>Alert volume by fraud rule</h2>")
@@ -2227,7 +2363,8 @@ def render_html(report: Report, manifest: dict[str, Any]) -> str:
 # --------------------------------------------------------------------------------------
 
 
-def build_manifest(report: Report, output_files: Sequence[Path]) -> dict[str, Any]:
+def build_manifest(report: Report, output_files: Sequence[Path],
+                   compare_sources: "SourceSet | None" = None) -> dict[str, Any]:
     """Assemble the run manifest.
 
     ``deterministic_payload_sha256`` covers every output except the manifest itself and
@@ -2244,7 +2381,7 @@ def build_manifest(report: Report, output_files: Sequence[Path]) -> dict[str, An
     payload = "\n".join(f'{entry["file"]}:{entry["sha256"]}' for entry in outputs)
     payload_digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    return {
+    manifest: dict[str, Any] = {
         "tool": {
             "name": TOOL_NAME,
             "version": TOOL_VERSION,
@@ -2265,6 +2402,7 @@ def build_manifest(report: Report, output_files: Sequence[Path]) -> dict[str, An
         "row_counts": {
             "control_view.csv": len(report.rule_rows),
             "control_coverage.csv": len(report.control_rows),
+            "control_coverage_trend.csv": len(report.trend_rows),
             "unmapped_rules.csv": len(report.unmapped_rows),
             "integrity_exceptions.csv": len(report.exception_rows),
             "fraud_loss_baseline.csv": len(report.loss_rows),
@@ -2282,6 +2420,10 @@ def build_manifest(report: Report, output_files: Sequence[Path]) -> dict[str, An
             "inputs_unchanged": True,
         },
     }
+    if compare_sources is not None:
+        manifest["compare_inputs"] = [compare_sources.files[name].manifest_entry()
+                                      for name in sorted(compare_sources.files)]
+    return manifest
 
 
 def assert_output_dir_safe(params: RunParams) -> None:
@@ -2317,11 +2459,47 @@ def run(params: RunParams) -> Report:
     digests_at_load = sources.digests()
 
     report = build_report(params, sources)
+
+    compare_sources: SourceSet | None = None
+    compare_digests: dict[str, str] = {}
+    if params.compare_period:
+        report.compare_period = params.compare_period
+        compare_params = replace(params, period=params.compare_period, compare_period=None)
+        try:
+            compare_sources = load_sources(compare_params)
+            compare_digests = compare_sources.digests()
+            compare_report = build_report(compare_params, compare_sources)
+        except SourceDataError as error:
+            compare_sources = None
+            report.compare_usable = False
+            report.compare_note = (f"Comparison period {params.compare_period} is "
+                                   f"unavailable: {error}")
+        else:
+            report.trend_rows = build_control_trend_rows(report, compare_report)
+            report.compare_usable = True
+            prior_pct = compare_report.summary_value("controls_evidenced_pct", "0")
+            report.compare_evidenced_pct = prior_pct
+            current_pct = report.summary_value("controls_evidenced_pct", "0")
+            delta = to_float(current_pct) - to_float(prior_pct)
+            report.summary_rows.append(SummaryRow(
+                "controls_evidenced_pct_prior", "Controls evidenced (prior period)",
+                prior_pct, "percent", LABEL_NOT_APPLICABLE,
+                "audit_checklist|rule_control_map|rule_registry|rule_fires",
+                f"controls_evidenced_pct recomputed for --compare-period "
+                f"{params.compare_period}"))
+            report.summary_rows.append(SummaryRow(
+                "controls_evidenced_pct_delta", "Controls evidenced change vs prior period",
+                f"{delta:.2f}", "percent", LABEL_NOT_APPLICABLE, "derived",
+                "controls_evidenced_pct - controls_evidenced_pct_prior"))
+    else:
+        report.compare_note = ("No comparison period was specified (--compare-period); "
+                               "the coverage trend is not shown.")
+
     written = write_csv_outputs(report)
 
     # The manifest hashes the CSVs, and the HTML embeds the manifest digest, so build in
     # this order: CSVs -> manifest -> HTML -> rewrite manifest with the HTML included.
-    manifest = build_manifest(report, written)
+    manifest = build_manifest(report, written, compare_sources)
     html_path = params.run_dir() / "evidence_pack.html"
     html_path.write_text(render_html(report, manifest), encoding="utf-8", newline="\n")
     manifest["outputs"].append({
@@ -2332,6 +2510,8 @@ def run(params: RunParams) -> Report:
     manifest["outputs"].sort(key=lambda entry: entry["file"])
 
     verify_inputs_unchanged(sources, digests_at_load)
+    if compare_sources is not None:
+        verify_inputs_unchanged(compare_sources, compare_digests)
 
     manifest_path = params.run_dir() / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8",
@@ -2372,6 +2552,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         help="days after which a pending alert is an exception")
     parser.add_argument("--audit-date", type=date.fromisoformat, default=None,
                         help="optional scheduled audit date, for the days-to-audit metric")
+    parser.add_argument("--compare-period", default=None,
+                        help="optional prior month, YYYY-MM, to compare control coverage "
+                             "against (e.g. 2026-05)")
     parser.add_argument("--fail-on-critical", action="store_true",
                         help="exit 2 when any CRITICAL exception is reported")
     return parser
@@ -2391,8 +2574,11 @@ def main(argv: list[str] | None = None) -> int:
         stale_review_days=args.stale_review_days,
         alert_ageing_sla_days=args.alert_ageing_sla_days,
         audit_date=args.audit_date,
+        compare_period=args.compare_period,
     )
     period_bounds(params.period)  # fail fast on a malformed period
+    if params.compare_period:
+        period_bounds(params.compare_period)  # fail fast on a malformed compare period
 
     try:
         report = run(params)

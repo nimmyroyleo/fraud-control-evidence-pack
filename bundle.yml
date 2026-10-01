@@ -1,0 +1,73 @@
+name: fraud-control-governance
+version: 1.0.0
+description: Complete Spec-Driven Development setup for fraud control evidence pack projects
+category: governance
+
+# This bundle packages the fraud-control governance preset, lineage-check extension,
+# and the specification-driven workflow, enabling new contributors to onboard with
+# a single installation command.
+
+includes:
+  presets:
+    - name: fraud-control-governance
+      version: 1.0.0
+      path: .specify/presets/fraud-control-governance.yml
+      priority: 10
+      strategy: wrap
+
+  extensions:
+    - name: lineage-check
+      version: 1.0.0
+      path: .specify/extensions/lineage-check/
+      effect: read-only
+      description: Validates output lineage compliance before implementation
+
+  workflows:
+    - name: spec-driven-development
+      description: Fraud control evidence pack specification-driven workflow
+      steps:
+        - constitution
+        - specify
+        - clarify  # optional
+        - plan
+        - tasks
+        - analyze
+        - implement
+        - converge
+
+# Bundle metadata
+author: Nimmy Roy
+license: Internal
+created: 2026-10-01
+
+# Installation instructions
+installation:
+  command: "specify bundle install fraud-control-governance"
+  time_estimate: "5 minutes"
+  prerequisites:
+    - "specify CLI v1.0.13+"
+    - "Python 3.8+"
+    - ".specify/ directory initialized in repo"
+
+# What this bundle sets up
+features:
+  - Enforced spec governance sections (5 principles compliance)
+  - Lineage validation (read-only gate before implementation)
+  - Preset shapes all specs consistently
+  - Extension adds quality check for output contracts
+  - Full Spec-Kit workflow for constitution → code
+
+# Next steps after installation
+post_install:
+  - "Review .specify/memory/constitution.md (5 principles)"
+  - "Run: /speckit-specify to create a feature spec"
+  - "Spec will now require governance sections (mandatory)"
+  - "Run: /lineage-check to validate output lineage"
+
+# Distribution & versioning
+distribution:
+  repository: fraud-control-evidence-pack
+  branch: main
+  updated: 2026-10-01
+  changelog:
+    1.0.0: "Initial release: preset + extension + workflow"
